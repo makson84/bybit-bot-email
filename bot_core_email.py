@@ -24,7 +24,7 @@ SMTP_PORT = 465
 TIMEFRAME = 15
 BB_PERIOD = 20
 BB_STD_DEV = 2
-BB_BUFFER_PCT = -10.0          # ТЕСТОВЫЙ РЕЖИМ
+BB_BUFFER_PCT = -10.0
 VOLUME_24H_THRESHOLD = 0
 RSI_PERIOD = 14
 RSI_OVERBOUGHT = 0
@@ -44,7 +44,6 @@ stats = {
     "start_time": datetime.now()
 }
 
-# ==================== ОТПРАВКА НА ПОЧТУ ====================
 def send_email_signal(signal):
     global messages_sent_today, reset_day
     current_day = datetime.now().day
@@ -55,7 +54,6 @@ def send_email_signal(signal):
     if VOLUME_24H_THRESHOLD > 0:
         vol = signal.get('volume_24h', 0)
         if vol < VOLUME_24H_THRESHOLD:
-            print(f"⏩ {signal['symbol']}: объём {vol:,.0f} < {VOLUME_24H_THRESHOLD:,.0f} (пропуск)")
             return False
     
     emoji = "🟢 LONG" if signal['side'] == 'LONG' else "🔴 SHORT"
@@ -106,7 +104,6 @@ def send_email_message(text):
         print(f"❌ Ошибка отправки: {e}")
         return False
 
-# ==================== КЭШ ПАР ====================
 def load_symbols_cache():
     try:
         if os.path.exists("symbols_cache_email.pkl"):
@@ -127,7 +124,6 @@ def save_symbols_cache(symbols):
     except Exception as e:
         print(f"⚠️ Ошибка сохранения кэша списка: {e}")
 
-# ==================== ПОЛУЧЕНИЕ СПИСКА ПАР ====================
 def get_all_usdt_futures():
     cached = load_symbols_cache()
     if cached:
@@ -156,7 +152,6 @@ def get_all_usdt_futures():
     print("⚠️ Использую базовый список")
     return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT']
 
-# ==================== ЗАГРУЗКА ИСТОРИИ ====================
 def fetch_klines(symbol):
     try:
         resp = requests.get("https://api.bybit.com/v5/market/kline", params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100}, timeout=15)
@@ -211,7 +206,6 @@ def init_symbol_data(symbols):
     
     print(f"✅ Загружено {len(symbol_buffers)} пар")
 
-# ==================== ИНДИКАТОРЫ ====================
 def calculate_rsi(closes, period=14):
     if len(closes) < period + 1:
         return 50.0
@@ -234,7 +228,6 @@ def calculate_bollinger(symbol):
     std = np.std(prev, ddof=0)
     return sma + BB_STD_DEV * std, sma - BB_STD_DEV * std
 
-# ==================== МГНОВЕННАЯ ПРОВЕРКА ====================
 def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
     try:
         short_cond = current_price >= (bb_high * (1 + BB_BUFFER_PCT / 100))
@@ -323,35 +316,26 @@ async def check_symbols():
             
             print(f"\n🔄 Проверка {len(symbols)} пар...", flush=True)
             
-            # ==================== ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА BTCUSDT ====================
-            # Проверяем BTCUSDT в первую очередь (для быстрого теста)
+            # ==================== ПОЛУЧАЕМ ВСЕ ТИКЕРЫ ОДНИМ ЗАПРОСОМ ====================
             try:
-                resp = requests.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear", "symbol": "BTCUSDT"}, timeout=5)
+                resp = requests.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear"}, timeout=20)
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get('retCode') == 0:
                         tickers = data['result']['list']
-                        if tickers:
-                            current_price = float(tickers[0].get('lastPrice', 0))
-                            volume_24h = live_volumes.get("BTCUSDT", 0)
-                            bb = bollinger_cache.get("BTCUSDT")
-                            if bb:
-                                bb_high, bb_low = bb
-                                print(f"\n🔥 ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА BTCUSDT:", flush=True)
-                                check_signal_instant("BTCUSDT", current_price, bb_high, bb_low, volume_24h)
-            except Exception as e:
-                print(f"⚠️ Ошибка принудительной проверки BTCUSDT: {e}", flush=True)
-            # ======================================================================
-            
-            for symbol in symbols:
-                try:
-                    resp = requests.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear", "symbol": symbol}, timeout=5)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data.get('retCode') == 0:
-                            tickers = data['result']['list']
-                            if tickers:
-                                current_price = float(tickers[0].get('lastPrice', 0))
+                        print(f"✅ Получено {len(tickers)} тикеров", flush=True)
+                        
+                        # Создаём словарь {symbol: price}
+                        ticker_prices = {}
+                        for item in tickers:
+                            symbol = item.get('symbol', '')
+                            if symbol.endswith('USDT') and not symbol.endswith('-'):
+                                ticker_prices[symbol] = float(item.get('lastPrice', 0))
+                        
+                        # Проверяем каждую пару из нашего списка
+                        for symbol in symbols:
+                            if symbol in ticker_prices:
+                                current_price = ticker_prices[symbol]
                                 volume_24h = live_volumes.get(symbol, 0)
                                 
                                 bb = bollinger_cache.get(symbol)
@@ -359,14 +343,13 @@ async def check_symbols():
                                     bb_high, bb_low = bb
                                     check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h)
                             else:
-                                print(f"⚠️ {symbol}: нет тикеров", flush=True)
-                        else:
-                            print(f"⚠️ {symbol}: ошибка API - {data.get('retMsg')}", flush=True)
+                                print(f"⚠️ {symbol}: нет тикера", flush=True)
                     else:
-                        print(f"⚠️ {symbol}: HTTP {resp.status_code}", flush=True)
-                except Exception as e:
-                    print(f"⚠️ Ошибка при проверке {symbol}: {e}", flush=True)
-                await asyncio.sleep(0.02)
+                        print(f"⚠️ Ошибка API: {data.get('retMsg')}", flush=True)
+                else:
+                    print(f"⚠️ HTTP ошибка: {resp.status_code}", flush=True)
+            except Exception as e:
+                print(f"⚠️ Ошибка получения тикеров: {e}", flush=True)
             
             print(f"✅ Проверка {len(symbols)} пар завершена\n", flush=True)
             await asyncio.sleep(30)
