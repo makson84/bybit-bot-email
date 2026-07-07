@@ -25,11 +25,11 @@ SMTP_PORT = 465
 TIMEFRAME = 15
 BB_PERIOD = 20
 BB_STD_DEV = 2
-BB_BUFFER_PCT = 3.0
+BB_BUFFER_PCT = 1.0
 VOLUME_24H_THRESHOLD = 1000000
 RSI_PERIOD = 14
-RSI_OVERBOUGHT = 75
-RSI_OVERSOLD = 35
+RSI_OVERBOUGHT = 0
+RSI_OVERSOLD = 0
 CHECK_INTERVAL = 30  # Проверка каждые 30 секунд
 
 # ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
