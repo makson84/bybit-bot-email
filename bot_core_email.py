@@ -30,6 +30,13 @@ RSI_PERIOD = 14
 RSI_OVERBOUGHT = 0
 RSI_OVERSOLD = 0
 
+# ==================== ПРОКСИ (ОБХОД БЛОКИРОВКИ) ====================
+PROXY = {
+    "http": "http://brd.superproxy.io:22225",
+    "https": "http://brd.superproxy.io:22225",
+}
+USE_PROXY = True  # Включить прокси
+
 # ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 symbol_buffers = {}
 symbol_volume_buffers = {}
@@ -132,7 +139,13 @@ def get_all_usdt_futures():
     print("🔄 Загружаю список пар с Bybit...")
     pairs = []
     try:
-        resp = requests.get("https://api.bybit.com/v5/market/instruments-info", params={"category": "linear", "limit": 1000}, timeout=30)
+        proxies = PROXY if USE_PROXY else None
+        resp = requests.get(
+            "https://api.bybit.com/v5/market/instruments-info",
+            params={"category": "linear", "limit": 1000},
+            timeout=30,
+            proxies=proxies
+        )
         if resp.status_code == 200:
             data = resp.json()
             if data.get('retCode') == 0:
@@ -154,7 +167,13 @@ def get_all_usdt_futures():
 
 def fetch_klines(symbol):
     try:
-        resp = requests.get("https://api.bybit.com/v5/market/kline", params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100}, timeout=15)
+        proxies = PROXY if USE_PROXY else None
+        resp = requests.get(
+            "https://api.bybit.com/v5/market/kline",
+            params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100},
+            timeout=15,
+            proxies=proxies
+        )
         if resp.status_code == 200:
             data = resp.json()
             if data.get('retCode') == 0:
@@ -294,7 +313,13 @@ def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
 async def fetch_volumes():
     while True:
         try:
-            resp = requests.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear"}, timeout=20)
+            proxies = PROXY if USE_PROXY else None
+            resp = requests.get(
+                "https://api.bybit.com/v5/market/tickers",
+                params={"category": "linear"},
+                timeout=20,
+                proxies=proxies
+            )
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get('retCode') == 0:
@@ -316,23 +341,26 @@ async def check_symbols():
             
             print(f"\n🔄 Проверка {len(symbols)} пар...", flush=True)
             
-            # ==================== ПОЛУЧАЕМ ВСЕ ТИКЕРЫ ОДНИМ ЗАПРОСОМ ====================
             try:
-                resp = requests.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear"}, timeout=20)
+                proxies = PROXY if USE_PROXY else None
+                resp = requests.get(
+                    "https://api.bybit.com/v5/market/tickers",
+                    params={"category": "linear"},
+                    timeout=20,
+                    proxies=proxies
+                )
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get('retCode') == 0:
                         tickers = data['result']['list']
                         print(f"✅ Получено {len(tickers)} тикеров", flush=True)
                         
-                        # Создаём словарь {symbol: price}
                         ticker_prices = {}
                         for item in tickers:
                             symbol = item.get('symbol', '')
                             if symbol.endswith('USDT') and not symbol.endswith('-'):
                                 ticker_prices[symbol] = float(item.get('lastPrice', 0))
                         
-                        # Проверяем каждую пару из нашего списка
                         for symbol in symbols:
                             if symbol in ticker_prices:
                                 current_price = ticker_prices[symbol]
@@ -399,6 +427,8 @@ async def main():
     print(f"   Буфер: {BB_BUFFER_PCT}%")
     print(f"   RSI: {RSI_OVERBOUGHT}/{RSI_OVERSOLD}")
     print(f"   Объём: > {VOLUME_24H_THRESHOLD:,.0f} USDT")
+    print("=" * 60)
+    print(f"🌐 Прокси: {'ВКЛЮЧЕН' if USE_PROXY else 'ВЫКЛЮЧЕН'}", flush=True)
     print("=" * 60)
     
     send_email_message("🚀 БОТ ЗАПУЩЕН! (МГНОВЕННЫЕ СИГНАЛЫ + ЛОГИ)")
