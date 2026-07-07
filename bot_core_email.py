@@ -14,7 +14,7 @@ from email.mime.multipart import MIMEMultipart
 
 # ==================== НАСТРОЙКИ ПОЧТЫ ====================
 EMAIL_FROM = "maksut-1984@yandex.ru"
-EMAIL_PASSWORD = "dzvxcfnfahmagjdt"  # ПАРОЛЬ ПРИЛОЖЕНИЯ (НЕ МЕНЯТЬ!)
+EMAIL_PASSWORD = "dzvxcfnfahmagjdt"  # ПАРОЛЬ ПРИЛОЖЕНИЯ
 EMAIL_TO = "maksut-1984@yandex.ru"
 SMTP_SERVER = "smtp.yandex.ru"
 SMTP_PORT = 465
@@ -109,19 +109,19 @@ def load_symbols_cache():
             with open("symbols_cache_email.pkl", "rb") as f:
                 data = pickle.load(f)
                 if data and 'symbols' in data:
-                    print(f"📦 Кэш загружен: {len(data['symbols'])} пар")
+                    print(f"📦 Кэш списка загружен: {len(data['symbols'])} пар")
                     return data['symbols']
     except Exception as e:
-        print(f"⚠️ Ошибка загрузки кэша: {e}")
+        print(f"⚠️ Ошибка загрузки кэша списка: {e}")
     return None
 
 def save_symbols_cache(symbols):
     try:
         with open("symbols_cache_email.pkl", "wb") as f:
             pickle.dump({'symbols': symbols, 'timestamp': time.time()}, f)
-        print(f"💾 Кэш сохранён: {len(symbols)} пар")
+        print(f"💾 Кэш списка сохранён: {len(symbols)} пар")
     except Exception as e:
-        print(f"⚠️ Ошибка сохранения кэша: {e}")
+        print(f"⚠️ Ошибка сохранения кэша списка: {e}")
 
 # ==================== ПОЛУЧЕНИЕ СПИСКА ПАР ====================
 def get_all_usdt_futures():
@@ -152,7 +152,7 @@ def get_all_usdt_futures():
     print("⚠️ Использую базовый список")
     return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT']
 
-# ==================== ЗАГРУЗКА ИСТОРИИ ====================
+# ==================== ЗАГРУЗКА ИСТОРИИ (С КЭШЕМ) ====================
 def fetch_klines(symbol):
     try:
         resp = requests.get("https://api.bybit.com/v5/market/kline", params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100}, timeout=15)
@@ -168,7 +168,21 @@ def fetch_klines(symbol):
 
 def init_symbol_data(symbols):
     global symbol_buffers, symbol_volume_buffers
-    print(f"⏳ Загрузка {len(symbols)} пар...")
+    
+    # ПЫТАЕМСЯ ЗАГРУЗИТЬ КЭШ ИСТОРИИ
+    try:
+        if os.path.exists("history_cache_email.pkl"):
+            with open("history_cache_email.pkl", "rb") as f:
+                cache = pickle.load(f)
+                if cache and 'buffers' in cache:
+                    symbol_buffers = cache['buffers']
+                    symbol_volume_buffers = cache['volume_buffers']
+                    print(f"⚡ Загружено {len(symbol_buffers)} пар из кэша истории (МГНОВЕННО!)")
+                    return
+    except Exception as e:
+        print(f"⚠️ Ошибка загрузки кэша истории: {e}")
+    
+    print(f"⏳ Начинаю загрузку {len(symbols)} пар...")
     for idx, sym in enumerate(symbols, 1):
         if idx % 50 == 0:
             print(f"📊 Прогресс: {idx}/{len(symbols)}")
@@ -179,6 +193,20 @@ def init_symbol_data(symbols):
             turnovers = [float(k[6]) for k in klines[-96:]]
             symbol_volume_buffers[sym] = deque(turnovers, maxlen=96)
         time.sleep(0.02)
+    
+    # СОХРАНЯЕМ КЭШ ИСТОРИИ
+    try:
+        cache = {
+            'symbols': list(symbol_buffers.keys()),
+            'buffers': symbol_buffers,
+            'volume_buffers': symbol_volume_buffers
+        }
+        with open("history_cache_email.pkl", "wb") as f:
+            pickle.dump(cache, f)
+        print(f"💾 Кэш истории сохранён: {len(symbol_buffers)} пар")
+    except Exception as e:
+        print(f"⚠️ Ошибка сохранения кэша истории: {e}")
+    
     print(f"✅ Загружено {len(symbol_buffers)} пар")
 
 # ==================== ИНДИКАТОРЫ ====================
