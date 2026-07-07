@@ -24,10 +24,10 @@ SMTP_PORT = 465
 TIMEFRAME = 15
 BB_PERIOD = 20
 BB_STD_DEV = 2
-BB_BUFFER_PCT = -10.0          # ТЕСТОВЫЙ РЕЖИМ (много сигналов)
-VOLUME_24H_THRESHOLD = 0       # 0 = отключаем фильтр объёма
+BB_BUFFER_PCT = -10.0          # ТЕСТОВЫЙ РЕЖИМ
+VOLUME_24H_THRESHOLD = 0
 RSI_PERIOD = 14
-RSI_OVERBOUGHT = 0             # 0 = отключаем RSI
+RSI_OVERBOUGHT = 0
 RSI_OVERSOLD = 0
 
 # ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
@@ -52,8 +52,6 @@ def send_email_signal(signal):
         messages_sent_today = 0
         reset_day = current_day
     
-    # ==================== ПРАВИЛЬНЫЙ ФИЛЬТР ПО ОБЪЁМУ ====================
-    # Если порог больше 0, то пропускаем только монеты с объёмом БОЛЬШЕ порога
     if VOLUME_24H_THRESHOLD > 0:
         vol = signal.get('volume_24h', 0)
         if vol < VOLUME_24H_THRESHOLD:
@@ -236,18 +234,15 @@ def calculate_bollinger(symbol):
     std = np.std(prev, ddof=0)
     return sma + BB_STD_DEV * std, sma - BB_STD_DEV * std
 
-# ==================== МГНОВЕННАЯ ПРОВЕРКА С ЛОГАМИ ====================
+# ==================== МГНОВЕННАЯ ПРОВЕРКА ====================
 def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
     try:
-        # ==================== ПРОВЕРКА БУФЕРА ====================
         short_cond = current_price >= (bb_high * (1 + BB_BUFFER_PCT / 100))
         long_cond = current_price <= (bb_low * (1 - BB_BUFFER_PCT / 100))
         
-        # ============ ЛОГИРОВАНИЕ (ДЛЯ ОТЛАДКИ) ============
         print(f"🔍 {symbol}: цена={current_price:.6f}, bb_high={bb_high:.6f}, bb_low={bb_low:.6f}, объём={volume_24h:,.0f}", flush=True)
-        print(f"   SHORT условие: {short_cond} (нужно >= {bb_high * (1 + BB_BUFFER_PCT / 100):.6f})", flush=True)
-        print(f"   LONG условие:  {long_cond} (нужно <= {bb_low * (1 - BB_BUFFER_PCT / 100):.6f})", flush=True)
-        # ====================================================
+        print(f"   SHORT: {short_cond} (нужно >= {bb_high * (1 + BB_BUFFER_PCT / 100):.6f})", flush=True)
+        print(f"   LONG:  {long_cond} (нужно <= {bb_low * (1 - BB_BUFFER_PCT / 100):.6f})", flush=True)
         
         if not short_cond and not long_cond:
             print(f"⏩ {symbol}: условия не выполнены", flush=True)
@@ -328,6 +323,26 @@ async def check_symbols():
             
             print(f"\n🔄 Проверка {len(symbols)} пар...", flush=True)
             
+            # ==================== ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА BTCUSDT ====================
+            # Проверяем BTCUSDT в первую очередь (для быстрого теста)
+            try:
+                resp = requests.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear", "symbol": "BTCUSDT"}, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get('retCode') == 0:
+                        tickers = data['result']['list']
+                        if tickers:
+                            current_price = float(tickers[0].get('lastPrice', 0))
+                            volume_24h = live_volumes.get("BTCUSDT", 0)
+                            bb = bollinger_cache.get("BTCUSDT")
+                            if bb:
+                                bb_high, bb_low = bb
+                                print(f"\n🔥 ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА BTCUSDT:", flush=True)
+                                check_signal_instant("BTCUSDT", current_price, bb_high, bb_low, volume_24h)
+            except Exception as e:
+                print(f"⚠️ Ошибка принудительной проверки BTCUSDT: {e}", flush=True)
+            # ======================================================================
+            
             for symbol in symbols:
                 try:
                     resp = requests.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear", "symbol": symbol}, timeout=5)
@@ -343,8 +358,14 @@ async def check_symbols():
                                 if bb:
                                     bb_high, bb_low = bb
                                     check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h)
+                            else:
+                                print(f"⚠️ {symbol}: нет тикеров", flush=True)
+                        else:
+                            print(f"⚠️ {symbol}: ошибка API - {data.get('retMsg')}", flush=True)
+                    else:
+                        print(f"⚠️ {symbol}: HTTP {resp.status_code}", flush=True)
                 except Exception as e:
-                    pass
+                    print(f"⚠️ Ошибка при проверке {symbol}: {e}", flush=True)
                 await asyncio.sleep(0.02)
             
             print(f"✅ Проверка {len(symbols)} пар завершена\n", flush=True)
