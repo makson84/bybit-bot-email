@@ -30,6 +30,34 @@ RSI_PERIOD = 14
 RSI_OVERBOUGHT = 0
 RSI_OVERSOLD = 0
 
+# ==================== СПИСОК РОССИЙСКИХ ПРОКСИ ====================
+PROXY_LIST = [
+    {"http": "http://proxy.reg.ru:8080", "https": "http://proxy.reg.ru:8080"},
+    {"http": "http://proxy.nsk.su:8080", "https": "http://proxy.nsk.su:8080"},
+    {"http": "http://proxy.spb.ru:8080", "https": "http://proxy.spb.ru:8080"},
+    {"http": "http://proxy.moscow:8080", "https": "http://proxy.moscow:8080"},
+    {"http": "http://91.192.120.90:8080", "https": "http://91.192.120.90:8080"},
+    {"http": "http://91.197.24.34:8080", "https": "http://91.197.24.34:8080"},
+]
+
+def get_proxy():
+    """Возвращает рабочий прокси из списка"""
+    for proxy in PROXY_LIST:
+        try:
+            # Проверяем прокси
+            resp = requests.get(
+                "https://api.bybit.com/v5/market/tickers",
+                params={"category": "linear"},
+                timeout=10,
+                proxies=proxy
+            )
+            if resp.status_code == 200:
+                print(f"✅ Рабочий прокси найден: {proxy}", flush=True)
+                return proxy
+        except:
+            continue
+    return None
+
 # ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 symbol_buffers = {}
 symbol_volume_buffers = {}
@@ -132,11 +160,21 @@ def get_all_usdt_futures():
     print("🔄 Загружаю список пар с Bybit...")
     pairs = []
     try:
-        resp = requests.get(
-            "https://api.bybit.com/v5/market/instruments-info",
-            params={"category": "linear", "limit": 1000},
-            timeout=30
-        )
+        # Пробуем через прокси
+        proxy = get_proxy()
+        if proxy:
+            resp = requests.get(
+                "https://api.bybit.com/v5/market/instruments-info",
+                params={"category": "linear", "limit": 1000},
+                timeout=30,
+                proxies=proxy
+            )
+        else:
+            resp = requests.get(
+                "https://api.bybit.com/v5/market/instruments-info",
+                params={"category": "linear", "limit": 1000},
+                timeout=30
+            )
         if resp.status_code == 200:
             data = resp.json()
             if data.get('retCode') == 0:
@@ -158,11 +196,20 @@ def get_all_usdt_futures():
 
 def fetch_klines(symbol):
     try:
-        resp = requests.get(
-            "https://api.bybit.com/v5/market/kline",
-            params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100},
-            timeout=15
-        )
+        proxy = get_proxy()
+        if proxy:
+            resp = requests.get(
+                "https://api.bybit.com/v5/market/kline",
+                params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100},
+                timeout=15,
+                proxies=proxy
+            )
+        else:
+            resp = requests.get(
+                "https://api.bybit.com/v5/market/kline",
+                params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100},
+                timeout=15
+            )
         if resp.status_code == 200:
             data = resp.json()
             if data.get('retCode') == 0:
@@ -302,11 +349,20 @@ def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
 async def fetch_volumes():
     while True:
         try:
-            resp = requests.get(
-                "https://api.bybit.com/v5/market/tickers",
-                params={"category": "linear"},
-                timeout=20
-            )
+            proxy = get_proxy()
+            if proxy:
+                resp = requests.get(
+                    "https://api.bybit.com/v5/market/tickers",
+                    params={"category": "linear"},
+                    timeout=20,
+                    proxies=proxy
+                )
+            else:
+                resp = requests.get(
+                    "https://api.bybit.com/v5/market/tickers",
+                    params={"category": "linear"},
+                    timeout=20
+                )
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get('retCode') == 0:
@@ -328,12 +384,22 @@ async def check_symbols():
             
             print(f"\n🔄 Проверка {len(symbols)} пар...", flush=True)
             
+            # Пробуем через прокси
+            proxy = get_proxy()
             try:
-                resp = requests.get(
-                    "https://api.bybit.com/v5/market/tickers",
-                    params={"category": "linear"},
-                    timeout=20
-                )
+                if proxy:
+                    resp = requests.get(
+                        "https://api.bybit.com/v5/market/tickers",
+                        params={"category": "linear"},
+                        timeout=20,
+                        proxies=proxy
+                    )
+                else:
+                    resp = requests.get(
+                        "https://api.bybit.com/v5/market/tickers",
+                        params={"category": "linear"},
+                        timeout=20
+                    )
                 
                 print(f"📡 Статус ответа: {resp.status_code}", flush=True)
                 
