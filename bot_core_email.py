@@ -11,6 +11,7 @@ import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import sys
 
 # ==================== НАСТРОЙКИ ПОЧТЫ ====================
 EMAIL_FROM = "maksut-1984@yandex.ru"
@@ -23,10 +24,10 @@ SMTP_PORT = 465
 TIMEFRAME = 15
 BB_PERIOD = 20
 BB_STD_DEV = 2
-BB_BUFFER_PCT = -10
-VOLUME_24H_THRESHOLD = 0
+BB_BUFFER_PCT = -10.0          # ТЕСТОВЫЙ РЕЖИМ (много сигналов)
+VOLUME_24H_THRESHOLD = 0       # 0 = отключаем фильтр объёма
 RSI_PERIOD = 14
-RSI_OVERBOUGHT = 0
+RSI_OVERBOUGHT = 0             # 0 = отключаем RSI
 RSI_OVERSOLD = 0
 
 # ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
@@ -51,8 +52,13 @@ def send_email_signal(signal):
         messages_sent_today = 0
         reset_day = current_day
     
-    if signal.get('volume_24h', 0) < VOLUME_24H_THRESHOLD:
-        return False
+    # ==================== ПРАВИЛЬНЫЙ ФИЛЬТР ПО ОБЪЁМУ ====================
+    # Если порог больше 0, то пропускаем только монеты с объёмом БОЛЬШЕ порога
+    if VOLUME_24H_THRESHOLD > 0:
+        vol = signal.get('volume_24h', 0)
+        if vol < VOLUME_24H_THRESHOLD:
+            print(f"⏩ {signal['symbol']}: объём {vol:,.0f} < {VOLUME_24H_THRESHOLD:,.0f} (пропуск)")
+            return False
     
     emoji = "🟢 LONG" if signal['side'] == 'LONG' else "🔴 SHORT"
     subject = f"{emoji} {signal['side']} {signal['symbol']} | {signal['deviation']:.2f}%"
@@ -233,28 +239,29 @@ def calculate_bollinger(symbol):
 # ==================== МГНОВЕННАЯ ПРОВЕРКА С ЛОГАМИ ====================
 def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
     try:
+        # ==================== ПРОВЕРКА БУФЕРА ====================
         short_cond = current_price >= (bb_high * (1 + BB_BUFFER_PCT / 100))
         long_cond = current_price <= (bb_low * (1 - BB_BUFFER_PCT / 100))
         
-        # ============ ЛОГИРОВАНИЕ ============
-        print(f"🔍 {symbol}: цена={current_price:.6f}, bb_high={bb_high:.6f}, bb_low={bb_low:.6f}, объём={volume_24h:,.0f}")
-        print(f"   SHORT условие: {short_cond} (нужно >= {bb_high * 1.01:.6f})")
-        print(f"   LONG условие:  {long_cond} (нужно <= {bb_low * 0.99:.6f})")
-        # ====================================
+        # ============ ЛОГИРОВАНИЕ (ДЛЯ ОТЛАДКИ) ============
+        print(f"🔍 {symbol}: цена={current_price:.6f}, bb_high={bb_high:.6f}, bb_low={bb_low:.6f}, объём={volume_24h:,.0f}", flush=True)
+        print(f"   SHORT условие: {short_cond} (нужно >= {bb_high * (1 + BB_BUFFER_PCT / 100):.6f})", flush=True)
+        print(f"   LONG условие:  {long_cond} (нужно <= {bb_low * (1 - BB_BUFFER_PCT / 100):.6f})", flush=True)
+        # ====================================================
         
         if not short_cond and not long_cond:
-            print(f"⏩ {symbol}: условия не выполнены")
+            print(f"⏩ {symbol}: условия не выполнены", flush=True)
             return None
         
         closes = list(symbol_buffers.get(symbol, []))
         rsi = calculate_rsi(closes) if len(closes) > RSI_PERIOD else 50
-        print(f"   RSI: {rsi:.1f}")
+        print(f"   RSI: {rsi:.1f}", flush=True)
         
         if RSI_OVERBOUGHT > 0 and short_cond and rsi < RSI_OVERBOUGHT:
-            print(f"⏩ {symbol}: RSI {rsi:.1f} < {RSI_OVERBOUGHT} (нужно для SHORT)")
+            print(f"⏩ {symbol}: RSI {rsi:.1f} < {RSI_OVERBOUGHT} (нужно для SHORT)", flush=True)
             return None
         if RSI_OVERSOLD > 0 and long_cond and rsi > RSI_OVERSOLD:
-            print(f"⏩ {symbol}: RSI {rsi:.1f} > {RSI_OVERSOLD} (нужно для LONG)")
+            print(f"⏩ {symbol}: RSI {rsi:.1f} > {RSI_OVERSOLD} (нужно для LONG)", flush=True)
             return None
         
         signal = None
@@ -271,7 +278,7 @@ def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
                 'rsi': rsi,
                 'candle_time': datetime.now().strftime('%H:%M:%S')
             }
-            print(f"⚡ СИГНАЛ SHORT {symbol} (откл: {deviation:.2f}%)")
+            print(f"⚡ СИГНАЛ SHORT {symbol} (откл: {deviation:.2f}%)", flush=True)
         elif long_cond:
             deviation = ((bb_low / current_price) - 1) * 100
             signal = {
@@ -285,7 +292,7 @@ def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
                 'rsi': rsi,
                 'candle_time': datetime.now().strftime('%H:%M:%S')
             }
-            print(f"⚡ СИГНАЛ LONG {symbol} (откл: {deviation:.2f}%)")
+            print(f"⚡ СИГНАЛ LONG {symbol} (откл: {deviation:.2f}%)", flush=True)
         
         if signal:
             stats['total_signals'] += 1
@@ -319,7 +326,7 @@ async def check_symbols():
                 await asyncio.sleep(5)
                 continue
             
-            print(f"\n🔄 Проверка {len(symbols)} пар...")
+            print(f"\n🔄 Проверка {len(symbols)} пар...", flush=True)
             
             for symbol in symbols:
                 try:
@@ -340,7 +347,7 @@ async def check_symbols():
                     pass
                 await asyncio.sleep(0.02)
             
-            print(f"✅ Проверка {len(symbols)} пар завершена\n")
+            print(f"✅ Проверка {len(symbols)} пар завершена\n", flush=True)
             await asyncio.sleep(30)
             
         except Exception as e:
