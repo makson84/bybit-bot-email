@@ -14,7 +14,7 @@ from email.mime.multipart import MIMEMultipart
 
 # ==================== НАСТРОЙКИ ПОЧТЫ ====================
 EMAIL_FROM = "maksut-1984@yandex.ru"
-EMAIL_PASSWORD = "dzvxcfnfahmagjdt"  # ПАРОЛЬ ПРИЛОЖЕНИЯ
+EMAIL_PASSWORD = "dzvxcfnfahmagjdt"
 EMAIL_TO = "maksut-1984@yandex.ru"
 SMTP_SERVER = "smtp.yandex.ru"
 SMTP_PORT = 465
@@ -152,7 +152,7 @@ def get_all_usdt_futures():
     print("⚠️ Использую базовый список")
     return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT']
 
-# ==================== ЗАГРУЗКА ИСТОРИИ (С КЭШЕМ) ====================
+# ==================== ЗАГРУЗКА ИСТОРИИ ====================
 def fetch_klines(symbol):
     try:
         resp = requests.get("https://api.bybit.com/v5/market/kline", params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100}, timeout=15)
@@ -169,7 +169,6 @@ def fetch_klines(symbol):
 def init_symbol_data(symbols):
     global symbol_buffers, symbol_volume_buffers
     
-    # ПЫТАЕМСЯ ЗАГРУЗИТЬ КЭШ ИСТОРИИ
     try:
         if os.path.exists("history_cache_email.pkl"):
             with open("history_cache_email.pkl", "rb") as f:
@@ -194,7 +193,6 @@ def init_symbol_data(symbols):
             symbol_volume_buffers[sym] = deque(turnovers, maxlen=96)
         time.sleep(0.02)
     
-    # СОХРАНЯЕМ КЭШ ИСТОРИИ
     try:
         cache = {
             'symbols': list(symbol_buffers.keys()),
@@ -232,21 +230,31 @@ def calculate_bollinger(symbol):
     std = np.std(prev, ddof=0)
     return sma + BB_STD_DEV * std, sma - BB_STD_DEV * std
 
-# ==================== МГНОВЕННАЯ ПРОВЕРКА ====================
+# ==================== МГНОВЕННАЯ ПРОВЕРКА С ЛОГАМИ ====================
 def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
     try:
         short_cond = current_price >= (bb_high * (1 + BB_BUFFER_PCT / 100))
         long_cond = current_price <= (bb_low * (1 - BB_BUFFER_PCT / 100))
         
+        # ============ ЛОГИРОВАНИЕ ============
+        print(f"🔍 {symbol}: цена={current_price:.6f}, bb_high={bb_high:.6f}, bb_low={bb_low:.6f}, объём={volume_24h:,.0f}")
+        print(f"   SHORT условие: {short_cond} (нужно >= {bb_high * 1.01:.6f})")
+        print(f"   LONG условие:  {long_cond} (нужно <= {bb_low * 0.99:.6f})")
+        # ====================================
+        
         if not short_cond and not long_cond:
+            print(f"⏩ {symbol}: условия не выполнены")
             return None
         
         closes = list(symbol_buffers.get(symbol, []))
         rsi = calculate_rsi(closes) if len(closes) > RSI_PERIOD else 50
+        print(f"   RSI: {rsi:.1f}")
         
         if RSI_OVERBOUGHT > 0 and short_cond and rsi < RSI_OVERBOUGHT:
+            print(f"⏩ {symbol}: RSI {rsi:.1f} < {RSI_OVERBOUGHT} (нужно для SHORT)")
             return None
         if RSI_OVERSOLD > 0 and long_cond and rsi > RSI_OVERSOLD:
+            print(f"⏩ {symbol}: RSI {rsi:.1f} > {RSI_OVERSOLD} (нужно для LONG)")
             return None
         
         signal = None
@@ -263,6 +271,7 @@ def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
                 'rsi': rsi,
                 'candle_time': datetime.now().strftime('%H:%M:%S')
             }
+            print(f"⚡ СИГНАЛ SHORT {symbol} (откл: {deviation:.2f}%)")
         elif long_cond:
             deviation = ((bb_low / current_price) - 1) * 100
             signal = {
@@ -276,14 +285,15 @@ def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
                 'rsi': rsi,
                 'candle_time': datetime.now().strftime('%H:%M:%S')
             }
+            print(f"⚡ СИГНАЛ LONG {symbol} (откл: {deviation:.2f}%)")
         
         if signal:
             stats['total_signals'] += 1
-            print(f"⚡ МГНОВЕННЫЙ СИГНАЛ {signal['side']} {symbol} (откл: {signal['deviation']:.2f}%, RSI: {rsi:.1f})")
             send_email_signal(signal)
             return signal
         return None
     except Exception as e:
+        print(f"⚠️ Ошибка в check_signal_instant: {e}")
         return None
 
 async def fetch_volumes():
@@ -309,11 +319,10 @@ async def check_symbols():
                 await asyncio.sleep(5)
                 continue
             
-            print(f"🔄 Проверка {len(symbols)} пар...")
+            print(f"\n🔄 Проверка {len(symbols)} пар...")
             
             for symbol in symbols:
                 try:
-                    # Получаем текущую цену
                     resp = requests.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear", "symbol": symbol}, timeout=5)
                     if resp.status_code == 200:
                         data = resp.json()
@@ -327,10 +336,11 @@ async def check_symbols():
                                 if bb:
                                     bb_high, bb_low = bb
                                     check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h)
-                except:
+                except Exception as e:
                     pass
                 await asyncio.sleep(0.02)
             
+            print(f"✅ Проверка {len(symbols)} пар завершена\n")
             await asyncio.sleep(30)
             
         except Exception as e:
@@ -372,7 +382,7 @@ def stats_printer():
 
 async def main():
     print("=" * 60)
-    print("🤖 БОТ-СКАНЕР BOLLINGER + RSI (МГНОВЕННЫЕ СИГНАЛЫ)")
+    print("🤖 БОТ-СКАНЕР BOLLINGER + RSI (МГНОВЕННЫЕ СИГНАЛЫ + ЛОГИ)")
     print("=" * 60)
     print(f"📊 НАСТРОЙКИ:")
     print(f"   Буфер: {BB_BUFFER_PCT}%")
@@ -380,7 +390,7 @@ async def main():
     print(f"   Объём: > {VOLUME_24H_THRESHOLD:,.0f} USDT")
     print("=" * 60)
     
-    send_email_message("🚀 БОТ ЗАПУЩЕН! (МГНОВЕННЫЕ СИГНАЛЫ)")
+    send_email_message("🚀 БОТ ЗАПУЩЕН! (МГНОВЕННЫЕ СИГНАЛЫ + ЛОГИ)")
     
     threading.Thread(target=stats_printer, daemon=True).start()
     
