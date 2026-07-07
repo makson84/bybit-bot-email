@@ -30,14 +30,6 @@ RSI_PERIOD = 14
 RSI_OVERBOUGHT = 0
 RSI_OVERSOLD = 0
 
-# ==================== ПРОКСИ (БЕСПЛАТНЫЙ, БЕЗ ПАРОЛЯ) ====================
-# Используем публичный прокси-сервер (может работать не всегда)
-PROXY = {
-    "http": "http://proxy-daily.com:8080",
-    "https": "http://proxy-daily.com:8080",
-}
-USE_PROXY = True  # Попробуем с прокси
-
 # ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 symbol_buffers = {}
 symbol_volume_buffers = {}
@@ -140,12 +132,10 @@ def get_all_usdt_futures():
     print("🔄 Загружаю список пар с Bybit...")
     pairs = []
     try:
-        proxies = PROXY if USE_PROXY else None
         resp = requests.get(
             "https://api.bybit.com/v5/market/instruments-info",
             params={"category": "linear", "limit": 1000},
-            timeout=30,
-            proxies=proxies
+            timeout=30
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -168,12 +158,10 @@ def get_all_usdt_futures():
 
 def fetch_klines(symbol):
     try:
-        proxies = PROXY if USE_PROXY else None
         resp = requests.get(
             "https://api.bybit.com/v5/market/kline",
             params={"category": "linear", "symbol": symbol, "interval": "15", "limit": 100},
-            timeout=15,
-            proxies=proxies
+            timeout=15
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -314,12 +302,10 @@ def check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h):
 async def fetch_volumes():
     while True:
         try:
-            proxies = PROXY if USE_PROXY else None
             resp = requests.get(
                 "https://api.bybit.com/v5/market/tickers",
                 params={"category": "linear"},
-                timeout=20,
-                proxies=proxies
+                timeout=20
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -328,8 +314,8 @@ async def fetch_volumes():
                     for item in data['result']['list']:
                         live_volumes[item['symbol']] = float(item.get('turnover24h', 0))
                     print(f"📊 Обновлены объёмы для {len(live_volumes)} пар")
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ Ошибка обновления объёмов: {e}")
         await asyncio.sleep(60)
 
 async def check_symbols():
@@ -342,20 +328,20 @@ async def check_symbols():
             
             print(f"\n🔄 Проверка {len(symbols)} пар...", flush=True)
             
-            # Пробуем с прокси
             try:
-                proxies = PROXY if USE_PROXY else None
                 resp = requests.get(
                     "https://api.bybit.com/v5/market/tickers",
                     params={"category": "linear"},
-                    timeout=20,
-                    proxies=proxies
+                    timeout=20
                 )
+                
+                print(f"📡 Статус ответа: {resp.status_code}", flush=True)
+                
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get('retCode') == 0:
                         tickers = data['result']['list']
-                        print(f"✅ Получено {len(tickers)} тикеров (через прокси)", flush=True)
+                        print(f"✅ Получено {len(tickers)} тикеров", flush=True)
                         
                         ticker_prices = {}
                         for item in tickers:
@@ -363,6 +349,9 @@ async def check_symbols():
                             if symbol.endswith('USDT') and not symbol.endswith('-'):
                                 ticker_prices[symbol] = float(item.get('lastPrice', 0))
                         
+                        print(f"📊 Найдено {len(ticker_prices)} монет с ценами", flush=True)
+                        
+                        checked = 0
                         for symbol in symbols:
                             if symbol in ticker_prices:
                                 current_price = ticker_prices[symbol]
@@ -372,77 +361,17 @@ async def check_symbols():
                                 if bb:
                                     bb_high, bb_low = bb
                                     check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h)
-                            else:
-                                print(f"⚠️ {symbol}: нет тикера", flush=True)
+                                    checked += 1
+                        
+                        print(f"✅ Проверено {checked} пар", flush=True)
                     else:
                         print(f"⚠️ Ошибка API: {data.get('retMsg')}", flush=True)
                 else:
-                    print(f"⚠️ HTTP ошибка (прокси): {resp.status_code}", flush=True)
-                    # Если прокси не работает, пробуем без прокси
-                    print("🔄 Пробую без прокси...", flush=True)
-                    resp2 = requests.get(
-                        "https://api.bybit.com/v5/market/tickers",
-                        params={"category": "linear"},
-                        timeout=20
-                    )
-                    if resp2.status_code == 200:
-                        data2 = resp2.json()
-                        if data2.get('retCode') == 0:
-                            tickers2 = data2['result']['list']
-                            print(f"✅ Получено {len(tickers2)} тикеров (без прокси)", flush=True)
-                            
-                            ticker_prices = {}
-                            for item in tickers2:
-                                symbol = item.get('symbol', '')
-                                if symbol.endswith('USDT') and not symbol.endswith('-'):
-                                    ticker_prices[symbol] = float(item.get('lastPrice', 0))
-                            
-                            for symbol in symbols:
-                                if symbol in ticker_prices:
-                                    current_price = ticker_prices[symbol]
-                                    volume_24h = live_volumes.get(symbol, 0)
-                                    
-                                    bb = bollinger_cache.get(symbol)
-                                    if bb:
-                                        bb_high, bb_low = bb
-                                        check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h)
-                                else:
-                                    print(f"⚠️ {symbol}: нет тикера", flush=True)
+                    print(f"⚠️ HTTP ошибка: {resp.status_code}", flush=True)
+                    print(f"📄 Текст ответа: {resp.text[:500]}", flush=True)
+                    
             except Exception as e:
                 print(f"⚠️ Ошибка получения тикеров: {e}", flush=True)
-                # Пробуем без прокси
-                try:
-                    print("🔄 Пробую без прокси (прямое соединение)...", flush=True)
-                    resp2 = requests.get(
-                        "https://api.bybit.com/v5/market/tickers",
-                        params={"category": "linear"},
-                        timeout=20
-                    )
-                    if resp2.status_code == 200:
-                        data2 = resp2.json()
-                        if data2.get('retCode') == 0:
-                            tickers2 = data2['result']['list']
-                            print(f"✅ Получено {len(tickers2)} тикеров (без прокси)", flush=True)
-                            
-                            ticker_prices = {}
-                            for item in tickers2:
-                                symbol = item.get('symbol', '')
-                                if symbol.endswith('USDT') and not symbol.endswith('-'):
-                                    ticker_prices[symbol] = float(item.get('lastPrice', 0))
-                            
-                            for symbol in symbols:
-                                if symbol in ticker_prices:
-                                    current_price = ticker_prices[symbol]
-                                    volume_24h = live_volumes.get(symbol, 0)
-                                    
-                                    bb = bollinger_cache.get(symbol)
-                                    if bb:
-                                        bb_high, bb_low = bb
-                                        check_signal_instant(symbol, current_price, bb_high, bb_low, volume_24h)
-                                else:
-                                    print(f"⚠️ {symbol}: нет тикера", flush=True)
-                except:
-                    pass
             
             print(f"✅ Проверка {len(symbols)} пар завершена\n", flush=True)
             await asyncio.sleep(30)
@@ -492,8 +421,6 @@ async def main():
     print(f"   Буфер: {BB_BUFFER_PCT}%")
     print(f"   RSI: {RSI_OVERBOUGHT}/{RSI_OVERSOLD}")
     print(f"   Объём: > {VOLUME_24H_THRESHOLD:,.0f} USDT")
-    print("=" * 60)
-    print(f"🌐 Прокси: {'ВКЛЮЧЕН' if USE_PROXY else 'ВЫКЛЮЧЕН'}", flush=True)
     print("=" * 60)
     
     send_email_message("🚀 БОТ ЗАПУЩЕН! (МГНОВЕННЫЕ СИГНАЛЫ + ЛОГИ)")
