@@ -18,7 +18,7 @@ EMAIL_FROM = "maksut-1984@yandex.ru"
 EMAIL_PASSWORD = "dzvxcfnfahmagjdt"
 EMAIL_TO = "maksut-1984@yandex.ru"
 SMTP_SERVER = "smtp.yandex.ru"
-SMTP_PORT = 465
+
 
 # ==================== НАСТРОЙКИ БОТА ====================
 TIMEFRAME = 15
@@ -34,10 +34,10 @@ RSI_OVERSOLD = 0
 PROXY_LIST = [
     {"http": "http://proxy.reg.ru:8080", "https": "http://proxy.reg.ru:8080"},
     {"http": "http://proxy.nsk.su:8080", "https": "http://proxy.nsk.su:8080"},
-    {"http": "http://proxy.spb.ru:8080", "https": "http://proxy.spb.ru:8080"},
+    {"http": "htt0", "https": "http://proxy.spb.ru:8080"},
     {"http": "http://proxy.moscow:8080", "https": "http://proxy.moscow:8080"},
-    {"http": "http://91.192.120.90:8080", "https": "http://91.192.120.90:8080"},
-    {"http": "http://91.197.24.34:8080", "https": "http://91.197.24.34:8080"},
+    {"ht8080", "https": "http://91.192.120.90:8080"},
+    {, "https": "http://91.197.24.34:8080"},
 ]
 
 def get_proxy():
@@ -55,16 +55,16 @@ def get_proxy():
                 print(f"✅ Рабочий прокси найден: {proxy}", flush=True)
                 return proxy
         except:
-            continue
+            con
     return None
 
 # ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 symbol_buffers = {}
 symbol_volume_buffers = {}
 live_volumes = {}
-bollinger_cache = {}
+bollinger_cac
 messages_sent_today = 0
-reset_day = datetime.now().day
+reset_day = datetime.no
 
 stats = {
     "total_signals": 0,
@@ -73,23 +73,21 @@ stats = {
 }
 
 def send_email_signal(signal):
-    global messages_sent_today, reset_day
-    current_day = datetime.now().day
+    global messages_sent_today_day
+    current_day = d().day
     if current_day != reset_day:
         messages_sent_today = 0
         reset_day = current_day
     
-    if VOLUME_24H_THRESHOLD > 0:
+    if VOLUME_24H_THRES > 0:
         vol = signal.get('volume_24h', 0)
-        if vol < VOLUME_24H_THRESHOLD:
+        if vol < VOLUME_RESHOLD:
             return False
     
     emoji = "🟢 LONG" if signal['side'] == 'LONG' else "🔴 SHORT"
     subject = f"{emoji} {signal['side']} {signal['symbol']} | {signal['deviation']:.2f}%"
     
-    body = f"""
-{emoji} МГНОВЕННЫЙ СИГНАЛ: {signal['side']} | {signal['symbol']}
-⏰ Время: {signal['candle_time']}
+    body }
 📈 Цена касания: {signal['price']:.6f}
 🎯 Отклонение: {signal['deviation']:.2f}%
 📊 RSI: {signal['rsi']:.1f}
